@@ -1,22 +1,52 @@
 import { takeLatest, call, put, all } from "redux-saga/effects";
+import { toast } from "react-toastify";
 import api from "~/services/api";
-import { signInSuccess } from "./actions";
+import { signInSuccess, signFailure } from "./actions";
 import history from "~/services/history";
 
 export function* signIn({ payload }) {
-  const { email, password } = payload;
-  const response = yield call(api.post, "/api/users/login", {
-    email,
-    password,
-  });
+  try {
+    const { email, password } = payload;
+    const response = yield call(api.post, "/api/users/login", {
+      email,
+      password,
+    });
 
-  const { token, profile } = response.data;
-  if (!profile === "master") {
-    console.tron.error("Usuário não é admin");
-    return;
+    const { token } = response.data;
+    const user = {
+      name: response.data.name,
+      email: response.data.email,
+      profile: response.data.profile,
+      active: response.data.active,
+    };
+    if (!response.data.success) {
+      toast.error("Dados de login inválidos");
+      yield put(signFailure());
+      return;
+    }
+    api.defaults.headers.Authorization = `Bearer ${token}`;
+    yield put(signInSuccess(token, user));
+    history.push("/dashboard");
+  } catch (err) {
+    toast.error("Erro acessando a API");
   }
-  yield put(signInSuccess(token, profile));
-  history.push("/dashboard");
 }
 
-export default all([takeLatest("@auth/SIGN_IN_REQUEST", signIn)]);
+export function setToken({ payload }) {
+  if (!payload) return;
+
+  const { token } = payload.auth;
+  if (token) {
+    api.defaults.headers.Authorization = `Bearer ${token}`;
+  }
+}
+
+export function signOut() {
+  history.push("/");
+}
+
+export default all([
+  takeLatest("@auth/SIGN_IN_REQUEST", signIn),
+  takeLatest("@auth/SIGN_OUT", signOut),
+  takeLatest("persist/REHYDRATE", setToken),
+]);
